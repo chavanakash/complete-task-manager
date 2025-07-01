@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_CREDENTIALS = credentials('dockerhub-credentials') // Jenkins credential ID
+        DOCKER_USER = 'dockerizzz'
+        EC2_IP = '16.171.153.111'
+        PEM_FILE = 'my-key.pem'
+    }
+
+    stages {
+        stage('Build Frontend Docker Image') {
+            steps {
+                dir('frontend') {
+                    script {
+                        sh 'docker build -t $DOCKER_USER/task-frontend:latest .'
+                    }
+                }
+            }
+        }
+
+        stage('Build Backend Docker Image') {
+            steps {
+                dir('backend') {
+                    script {
+                        sh 'docker build -t $DOCKER_USER/task-backend:latest .'
+                    }
+                }
+            }
+        }
+
+        stage('Push Docker Images to Docker Hub') {
+            steps {
+                script {
+                    sh """
+                        echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_USER --password-stdin
+                        docker push $DOCKER_USER/task-frontend:latest
+                        docker push $DOCKER_USER/task-backend:latest
+                    """
+                }
+            }
+        }
+
+        stage('Deploy on EC2') {
+            steps {
+                script {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no -i ~/Downloads/$PEM_FILE ubuntu@$EC2_IP << 'EOF'
+                            docker pull $DOCKER_USER/task-frontend:latest
+                            docker pull $DOCKER_USER/task-backend:latest
+                            cd my-app
+                            docker compose down
+                            docker compose up -d --build
+                        EOF
+                    """
+                }
+            }
+        }
+    }
+}
